@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculator</title>
+<style>
+  :root {
+    --bg: #f2f2f5; --body: #ffffff; --screen: #1c1c22; --screen-text: #f5f5f7;
+    --key: #e9e9ee; --key-text: #1c1c22; --fn: #d4d4dc; --op: #ff9f0a; --op-text: #fff;
+    --shadow: 0 10px 30px rgba(0,0,0,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e0e12; --body: #1a1a20; --screen: #000; --screen-text: #f5f5f7;
+      --key: #2c2c34; --key-text: #f5f5f7; --fn: #4a4a54; --shadow: 0 10px 30px rgba(0,0,0,.5);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: var(--bg); font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    padding: 16px;
+  }
+  .calc {
+    width: 100%; max-width: 340px; background: var(--body); border-radius: 24px;
+    padding: 18px; box-shadow: var(--shadow);
+  }
+  .screen {
+    background: var(--screen); color: var(--screen-text); border-radius: 16px;
+    padding: 16px 18px; margin-bottom: 16px; text-align: right; min-height: 104px;
+    display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden;
+  }
+  .expr { font-size: 15px; opacity: .55; min-height: 20px; word-break: break-all; }
+  .value { font-size: 44px; font-weight: 300; line-height: 1.15; word-break: break-all; }
+  .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  button {
+    border: 0; border-radius: 16px; height: 62px; font-size: 22px; cursor: pointer;
+    background: var(--key); color: var(--key-text); font-family: inherit;
+    transition: transform .06s, filter .15s;
+  }
+  button:hover { filter: brightness(1.06); }
+  button:active { transform: scale(.95); }
+  button.fn { background: var(--fn); }
+  button.op { background: var(--op); color: var(--op-text); }
+  button.op.active { background: var(--op-text); color: var(--op); }
+  button.zero { grid-column: span 2; }
+</style>
+</head>
+<body>
+<div class="calc">
+  <div class="screen">
+    <div class="expr" id="expr"></div>
+    <div class="value" id="value">0</div>
+  </div>
+  <div class="keys">
+    <button class="fn" data-action="clear" id="clearBtn">AC</button>
+    <button class="fn" data-action="sign">±</button>
+    <button class="fn" data-action="percent">%</button>
+    <button class="op" data-op="/">÷</button>
+
+    <button data-num="7">7</button>
+    <button data-num="8">8</button>
+    <button data-num="9">9</button>
+    <button class="op" data-op="*">×</button>
+
+    <button data-num="4">4</button>
+    <button data-num="5">5</button>
+    <button data-num="6">6</button>
+    <button class="op" data-op="-">−</button>
+
+    <button data-num="1">1</button>
+    <button data-num="2">2</button>
+    <button data-num="3">3</button>
+    <button class="op" data-op="+">+</button>
+
+    <button class="zero" data-num="0">0</button>
+    <button data-action="dot">.</button>
+    <button class="op" data-action="equals">=</button>
+  </div>
+</div>
+
+<script>
+  const valueEl = document.getElementById('value');
+  const exprEl = document.getElementById('expr');
+  const clearBtn = document.getElementById('clearBtn');
+  const symbols = { '+': '+', '-': '−', '*': '×', '/': '÷' };
+
+  let current = '0', previous = null, operator = null, fresh = false;
+
+  function format(n) {
+    if (n === 'Error') return n;
+    const num = Number(n);
+    if (!isFinite(num)) return 'Error';
+    if (String(n).endsWith('.') ) return n;
+    if (Math.abs(num) >= 1e12 || (Math.abs(num) < 1e-9 && num !== 0)) return num.toExponential(6);
+    const [int, dec] = String(n).split('.');
+    const intFmt = Number(int).toLocaleString('en-US');
+    const sign = int.startsWith('-') && Number(int) === 0 ? '-' : '';
+    return sign + intFmt + (dec !== undefined ? '.' + dec : '');
+  }
+
+  function compute(a, b, op) {
+    a = parseFloat(a); b = parseFloat(b);
+    let r;
+    switch (op) {
+      case '+': r = a + b; break;
+      case '-': r = a - b; break;
+      case '*': r = a * b; break;
+      case '/': if (b === 0) return 'Error'; r = a / b; break;
+    }
+    return String(parseFloat(r.toPrecision(12)));
+  }
+
+  function render() {
+    valueEl.textContent = format(current);
+    const len = valueEl.textContent.length;
+    valueEl.style.fontSize = len > 12 ? '28px' : len > 9 ? '36px' : '44px';
+    exprEl.textContent = operator ? `${format(previous)} ${symbols[operator]}` : '';
+    clearBtn.textContent = (current !== '0' && !fresh) ? 'C' : 'AC';
+    document.querySelectorAll('[data-op]').forEach(b =>
+      b.classList.toggle('active', fresh && b.dataset.op === operator));
+  }
+
+  function inputNum(d) {
+    if (current === 'Error') current = '0';
+    if (fresh) { current = d; fresh = false; }
+    else if (current.replace(/[-.]/g, '').length >= 15) return;
+    else current = current === '0' ? d : current === '-0' ? '-' + d : current + d;
+  }
+
+  function inputDot() {
+    if (fresh || current === 'Error') { current = '0.'; fresh = false; return; }
+    if (!current.includes('.')) current += '.';
+  }
+
+  function setOp(op) {
+    if (current === 'Error') return;
+    if (operator && !fresh) {
+      current = compute(previous, current, operator);
+      if (current === 'Error') { operator = null; previous = null; fresh = true; return; }
+    }
+    previous = current; operator = op; fresh = true;
+  }
+
+  function equals() {
+    if (!operator || current === 'Error') return;
+    exprEl.dataset.last = `${format(previous)} ${symbols[operator]} ${format(current)} =`;
+    current = compute(previous, current, operator);
+    operator = null; previous = null; fresh = true;
+  }
+
+  function clear() {
+    if (current !== '0' && !fresh) { current = '0'; }
+    else { current = '0'; previous = null; operator = null; fresh = false; }
+  }
+
+  function backspace() {
+    if (fresh || current === 'Error') return;
+    current = current.length > 1 && current !== '-0' ? current.slice(0, -1) : '0';
+    if (current === '-') current = '0';
+  }
+
+  function handle(btn) {
+    const { num, op, action } = btn.dataset;
+    let showLast = false;
+    if (num !== undefined) inputNum(num);
+    else if (op) setOp(op);
+    else if (action === 'dot') inputDot();
+    else if (action === 'clear') clear();
+    else if (action === 'sign' && current !== 'Error') {
+      current = current.startsWith('-') ? current.slice(1) : '-' + current;
+    }
+    else if (action === 'percent' && current !== 'Error') {
+      current = String(parseFloat((parseFloat(current) / 100).toPrecision(12)));
+    }
+    else if (action === 'equals') { equals(); showLast = true; }
+    render();
+    if (showLast && exprEl.dataset.last) { exprEl.textContent = exprEl.dataset.last; exprEl.dataset.last = ''; }
+  }
+
+  document.querySelector('.keys').addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (btn) handle(btn);
+  });
+
+  document.addEventListener('keydown', e => {
+    const k = e.key;
+    let sel = null;
+    if (/^[0-9]$/.test(k)) sel = `[data-num="${k}"]`;
+    else if ('+-*/'.includes(k)) sel = `[data-op="${k}"]`;
+    else if (k === '.' || k === ',') sel = '[data-action="dot"]';
+    else if (k === 'Enter' || k === '=') sel = '[data-action="equals"]';
+    else if (k === 'Escape') sel = '[data-action="clear"]';
+    else if (k === '%') sel = '[data-action="percent"]';
+    else if (k === 'Backspace') { backspace(); render(); return; }
+    if (sel) { e.preventDefault(); handle(document.querySelector(sel)); }
+  });
+
+  render();
+</script>
+</body>
+</html>
